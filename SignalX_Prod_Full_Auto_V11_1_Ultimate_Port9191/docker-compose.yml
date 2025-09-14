@@ -1,0 +1,45 @@
+services:
+  backend_v11:
+    container_name: signalx_backend_v11
+    build: ./backend
+    env_file: ./backend/.env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    expose: ["8000"]
+  web_v11:
+  proxy_v11:
+  image: nginx:1.27-alpine
+  container_name: signalx_proxy_v11
+  volumes:
+    - ./nginx.conf:/etc/nginx/nginx.conf:ro
+  ports:
+    - "9191:80"
+  depends_on:
+    - backend_v11
+    - web_v11
+  restart: unless-stopped
+
+    container_name: signalx_frontend_v11
+    build: ./frontend
+    depends_on:
+      backend_v11:
+        condition: service_healthy
+    restart: unless-stopped
+    expose: ["80"]
+  proxy_v11:
+    container_name: signalx_proxy_v11
+    image: nginx:1.27-alpine
+    depends_on:
+      web_v11:
+        condition: service_started
+      backend_v11:
+        condition: service_healthy
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports: ["9191:80"]
+    restart: unless-stopped

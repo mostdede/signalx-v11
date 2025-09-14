@@ -1,0 +1,78 @@
+<!doctype html><html lang="ar" dir="rtl"><head>
+<meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>SignalX — V11 (9191)</title>
+<style>
+:root{--bg:#eef2f7;--card:#fff;--muted:#64748b;--border:#e5e7eb}
+*{box-sizing:border-box} body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;background:var(--bg);margin:0}
+.container{max-width:1180px;margin:24px auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;box-shadow:0 6px 18px rgba(0,0,0,.06);margin-bottom:18px}
+.title{font-size:44px;font-weight:900;text-align:center;margin:6px 0 10px}
+.sub{text-align:center;color:#333;margin-bottom:14px}
+.btn{padding:10px 16px;border:1px solid #111;border-radius:10px;background:#fff;cursor:pointer;font-weight:700}
+.btn:hover{background:#111;color:#fff}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
+.metric{background:#f8fafc;border:1px solid var(--border);border-radius:12px;padding:12px;text-align:center}
+.muted{color:var(--muted);font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:12px} th,td{border-bottom:1px solid var(--border);padding:8px 10px;text-align:right}
+th{background:#f3f4f6}
+.canvasWrap{display:grid;grid-template-columns:1fr;gap:14px}
+canvas{width:100%;height:280px;border:1px solid var(--border);border-radius:12px;background:#fff}
+</style></head><body><div class="container">
+<div class="card">
+  <div class="title">SignalX — V11 (9191)</div>
+  <div class="sub">API Health: <b id="health">...</b></div>
+  <div style="display:flex;gap:12px;justify-content:center;margin-bottom:16px">
+    <button class="btn" id="rerun">Run Demo</button>
+  </div>
+  <div class="grid">
+    <div class="metric"><div>EMA (last)</div><div id="ema" style="font-size:18px;font-weight:800">—</div><div class="muted">period 20</div></div>
+    <div class="metric"><div>RSI (last)</div><div id="rsi" style="font-size:18px;font-weight:800">—</div><div class="muted">period 14</div></div>
+    <div class="metric"><div>Data points</div><div id="count" style="font-size:18px;font-weight:800">—</div><div class="muted">after cleaning</div></div>
+  </div>
+</div>
+<div class="card"><div class="canvasWrap">
+  <div><b>Price vs EMA</b><canvas id="chart1"></canvas></div>
+  <div><b>RSI</b><canvas id="chart2"></canvas></div>
+</div></div>
+<div class="card">
+  <h3>Last 100 points (cleaned)</h3>
+  <table><thead><tr><th>#</th><th>Price</th><th>EMA</th><th>RSI</th></tr></thead><tbody id="rows"></tbody></table>
+  <div class="muted" style="margin-top:8px">Null values مخفية تلقائيًا.</div>
+</div>
+</div>
+<script>
+async function ping(){try{const r=await fetch('/api/health'); const j=await r.json(); document.getElementById('health').textContent=j.status;}catch(e){document.getElementById('health').textContent='down';}}
+function drawLine(canvas, series){
+  const c=document.getElementById(canvas), ctx=c.getContext('2d'); const W=c.width=c.clientWidth, H=c.height=c.clientHeight;
+  ctx.clearRect(0,0,W,H); ctx.save(); const pad=30;
+  const n=Math.max(...series.map(s=>s.data.length));
+  const xmin=0, xmax=n-1; let ymin=Infinity, ymax=-Infinity;
+  series.forEach(s=>s.data.forEach(v=>{if(Number.isFinite(v)){ymin=Math.min(ymin,v); ymax=Math.max(ymax,v)}}));
+  if(!Number.isFinite(ymin)||!Number.isFinite(ymax)){ymin=0; ymax=1}
+  const ypad=(ymax-ymin)*0.1 || 1; ymin-=ypad; ymax+=ypad;
+  const xmap=i=>pad+(W-2*pad)*(i-xmin)/(xmax-xmin||1);
+  const ymap=v=>H-pad-(H-2*pad)*(v-ymin)/(ymax-ymin||1);
+  ctx.strokeStyle='#999'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(pad,H-pad); ctx.lineTo(W-pad,H-pad); ctx.moveTo(pad,pad); ctx.lineTo(pad,H-pad); ctx.stroke();
+  series.forEach((s,idx)=>{ ctx.beginPath(); let started=false;
+    for(let i=0;i<s.data.length;i++){const v=s.data[i]; if(Number.isFinite(v)){const x=xmap(i), y=ymap(v); if(!started){ctx.moveTo(x,y); started=true}else{ctx.lineTo(x,y)}}}
+    ctx.lineWidth=s.width||2; ctx.strokeStyle=s.color || (idx? '#0a7':'#06c'); ctx.stroke(); });
+  ctx.restore();
+}
+async function runDemo(){
+  const prices=Array.from({length:200},(_,i)=>100+Math.sin(i/8)*2+i*0.05);
+  const r=await fetch('/api/indicators',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prices})});
+  const data=await r.json(); const {ema,rsi}=data;
+  const emaClean=ema.filter(v=>Number.isFinite(v)), rsiClean=rsi.filter(v=>Number.isFinite(v));
+  document.getElementById('count').textContent=Math.max(ema.length,rsi.length);
+  document.getElementById('ema').textContent=(emaClean.at(-1)||0).toFixed(3);
+  document.getElementById('rsi').textContent=(rsiClean.at(-1)||0).toFixed(2);
+  const rows=document.getElementById('rows'); rows.innerHTML='';
+  const out=[]; for(let i=0;i<prices.length;i++){const E=ema[i], R=rsi[i]; if(Number.isFinite(E)||Number.isFinite(R)){out.push({i,p:prices[i],E,R});}}
+  out.slice(-100).forEach(r=>{const tr=document.createElement('tr'); tr.innerHTML=`<td>${r.i+1}</td><td>${r.p.toFixed(4)}</td><td>${Number.isFinite(r.E)?r.E.toFixed(4):'—'}</td><td>${Number.isFinite(r.R)?r.R.toFixed(2):'—'}</td>`; rows.appendChild(tr);});
+  drawLine('chart1',[{data:prices,color:'#444',width:1.5},{data:ema,color:'#0a7',width:2.0}]);
+  drawLine('chart2',[{data:rsi,color:'#c50',width:1.8}]);
+}
+document.getElementById('rerun').addEventListener('click', runDemo);
+ping(); setInterval(ping, 4000);
+runDemo();
+</script></body></html>
